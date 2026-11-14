@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "CampusPool",
+    "slug": "campuspool",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1f3864"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1f3864"
+      },
+      "package": "com.campuspool.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.campuspool.app",
+      "supportsTablet": false
+    }
+  }
+}
