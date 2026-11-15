@@ -6,7 +6,11 @@ const pool = require('../db');
  * Business rules:
  *  - Ride must be 'completed'
  *  - Reviewer must be a participant (driver or accepted rider)
- *  - Only one review per reviewer-reviewedUser pair per ride
+ *  - Reviewed user must be a participant:
+ *      - If reviewer is driver, reviewed user must have an accepted request on this ride
+ *      - If reviewer is rider, reviewed user must be the ride's driver
+ *  - Cannot rate yourself
+ *  - Only one review per reviewer-reviewedUser pair per ride (Postgres 23505 -> 409)
  */
 const addRating = async (req, res, next) => {
   try {
@@ -19,7 +23,7 @@ const addRating = async (req, res, next) => {
     if (rating < 1 || rating > 5) {
       return res.status(400).json({ error: 'Rating must be between 1 and 5' });
     }
-    if (reviewerId === reviewed_user_id) {
+    if (Number(reviewerId) === Number(reviewed_user_id)) {
       return res.status(400).json({ error: 'You cannot rate yourself' });
     }
 
@@ -35,14 +39,33 @@ const addRating = async (req, res, next) => {
     const ride = rideResult.rows[0];
 
     // Check reviewer is a participant
-    const isDriver = ride.driver_id === reviewerId;
-    const isRider = await pool.query(
+    const isDriver = Number(ride.driver_id) === Number(reviewerId);
+    const riderCheck = await pool.query(
       `SELECT 1 FROM seat_requests
        WHERE ride_id = $1 AND rider_id = $2 AND request_status = 'accepted'`,
       [ride_id, reviewerId]
     );
-    if (!isDriver && isRider.rows.length === 0) {
+    const isRider = riderCheck.rows.length > 0;
+
+    if (!isDriver && !isRider) {
       return res.status(403).json({ error: 'You were not a participant in this ride' });
+    }
+
+    // Verify reviewed_user_id was also a participant on that ride
+    if (isDriver) {
+      const reviewedRider = await pool.query(
+        `SELECT 1 FROM seat_requests
+         WHERE ride_id = $1 AND rider_id = $2 AND request_status = 'accepted'`,
+        [ride_id, reviewed_user_id]
+      );
+      if (reviewedRider.rows.length === 0) {
+        return res.status(400).json({ error: 'Reviewed user was not an accepted rider on this ride' });
+      }
+    } else {
+      // Reviewer is a rider -> reviewed user must be the ride's driver
+      if (Number(reviewed_user_id) !== Number(ride.driver_id)) {
+        return res.status(400).json({ error: 'Riders can only rate the driver of this ride' });
+      }
     }
 
     const result = await pool.query(
@@ -53,6 +76,9 @@ const addRating = async (req, res, next) => {
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Already reviewed' });
+    }
     next(err);
   }
 };
@@ -81,10 +107,15 @@ const getUserRatings = async (req, res, next) => {
       [userId]
     );
 
+    const row = avgResult.rows[0];
+    const average_rating = row && row.average_rating !== null ? Number(row.average_rating) : 0;
+    const total_reviews = row && row.total_reviews ? parseInt(row.total_reviews, 10) : 0;
+
     res.json({
       reviews: result.rows,
-      average_rating: avgResult.rows[0].average_rating,
-      total_reviews: avgResult.rows[0].total_reviews
+      average_rating,
+      total_reviews,
+      count: total_reviews
     });
   } catch (err) {
     next(err);
