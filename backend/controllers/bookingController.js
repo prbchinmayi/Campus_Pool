@@ -11,8 +11,14 @@ const requestSeat = async (req, res, next) => {
     const riderId = req.user.userId;
     const { ride_id, seats_requested } = req.body;
 
-    if (!ride_id || !seats_requested || seats_requested < 1) {
-      return res.status(400).json({ error: 'ride_id and seats_requested (>=1) are required' });
+    const seats = Number(seats_requested);
+    if (
+      !ride_id ||
+      typeof seats_requested === 'boolean' ||
+      !Number.isInteger(seats) ||
+      seats < 1
+    ) {
+      return res.status(400).json({ error: 'ride_id and a positive integer seats_requested (>= 1) are required' });
     }
 
     await client.query('BEGIN');
@@ -37,36 +43,53 @@ const requestSeat = async (req, res, next) => {
     }
 
     // Check available seats
-    if (ride.available_seats < seats_requested) {
+    if (ride.available_seats < seats) {
       await client.query('ROLLBACK');
       return res.status(409).json({
         error: `Only ${ride.available_seats} seat(s) available`
       });
     }
 
-    // Check for existing active request by this rider on this ride
+    // Check for existing request by this rider on this ride
     const existing = await client.query(
-      `SELECT request_id FROM seat_requests
-       WHERE ride_id = $1 AND rider_id = $2 AND request_status IN ('pending','accepted')`,
+      `SELECT request_id, request_status FROM seat_requests
+       WHERE ride_id = $1 AND rider_id = $2
+       FOR UPDATE`,
       [ride_id, riderId]
     );
-    if (existing.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'You already have an active request for this ride' });
-    }
 
-    // Insert seat request
-    const requestResult = await client.query(
-      `INSERT INTO seat_requests (ride_id, rider_id, seats_requested)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [ride_id, riderId, seats_requested]
-    );
+    let requestResult;
+    if (existing.rows.length > 0) {
+      const existingReq = existing.rows[0];
+
+      // Keep 409 for active requests
+      if (['pending', 'accepted'].includes(existingReq.request_status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'You already have an active request for this ride' });
+      }
+
+      // If previous request was rejected or cancelled, update row back to pending
+      requestResult = await client.query(
+        `UPDATE seat_requests
+         SET seats_requested = $1, request_status = 'pending', request_time = NOW()
+         WHERE request_id = $2
+         RETURNING *`,
+        [seats, existingReq.request_id]
+      );
+    } else {
+      // Insert seat request
+      requestResult = await client.query(
+        `INSERT INTO seat_requests (ride_id, rider_id, seats_requested)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [ride_id, riderId, seats]
+      );
+    }
 
     // Notify the driver
     await client.query(
       `INSERT INTO notifications (user_id, message, type)
        VALUES ($1, $2, 'seat_request')`,
-      [ride.driver_id, `A rider has requested ${seats_requested} seat(s) on your ride to ${ride.destination}.`]
+      [ride.driver_id, `A rider has requested ${seats} seat(s) on your ride to ${ride.destination}.`]
     );
 
     await client.query('COMMIT');
@@ -141,9 +164,9 @@ const respondToRequest = async (req, res, next) => {
 
     await client.query('BEGIN');
 
-    // Verify driver owns the ride this request belongs to
+    // Verify driver owns the ride this request belongs to and ride is scheduled
     const reqResult = await client.query(
-      `SELECT sr.*, r.driver_id, r.available_seats, r.destination
+      `SELECT sr.*, r.driver_id, r.available_seats, r.destination, r.ride_status
        FROM seat_requests sr
        JOIN rides r ON sr.ride_id = r.ride_id
        WHERE sr.request_id = $1 AND sr.request_status = 'pending'
@@ -161,6 +184,12 @@ const respondToRequest = async (req, res, next) => {
     if (request.driver_id !== driverId) {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Not your ride' });
+    }
+
+    // Require ride's status to be scheduled
+    if (request.ride_status !== 'scheduled') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Ride is no longer scheduled' });
     }
 
     const newStatus = action === 'accept' ? 'accepted' : 'rejected';
@@ -205,4 +234,84 @@ const respondToRequest = async (req, res, next) => {
   }
 };
 
-module.exports = { requestSeat, getMyBookings, respondToRequest };
+/**
+ * PATCH /api/bookings/:id/cancel
+ * Rider cancels their own pending or accepted seat request.
+ * If accepted, returns seats to rides.available_seats in a transaction with FOR UPDATE.
+ */
+const cancelBooking = async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const riderId = req.user.userId;
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    // Lock and retrieve the seat request along with ride details
+    const reqResult = await client.query(
+      `SELECT sr.*, r.driver_id, r.available_seats, r.destination, r.ride_status
+       FROM seat_requests sr
+       JOIN rides r ON sr.ride_id = r.ride_id
+       WHERE sr.request_id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (reqResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Seat request not found' });
+    }
+
+    const request = reqResult.rows[0];
+
+    // Verify rider owns the request
+    if (request.rider_id !== riderId) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Not your booking request' });
+    }
+
+    // Must be pending or accepted
+    if (!['pending', 'accepted'].includes(request.request_status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `Cannot cancel a request that is already ${request.request_status}` });
+    }
+
+    // If accepted, return the seats to rides.available_seats
+    if (request.request_status === 'accepted') {
+      await client.query(
+        `UPDATE rides SET available_seats = available_seats + $1 WHERE ride_id = $2`,
+        [request.seats_requested, request.ride_id]
+      );
+    }
+
+    // Update seat request status to cancelled
+    const updatedResult = await client.query(
+      `UPDATE seat_requests SET request_status = 'cancelled' WHERE request_id = $1 RETURNING *`,
+      [id]
+    );
+
+    // Notify the driver
+    await client.query(
+      `INSERT INTO notifications (user_id, message, type)
+       VALUES ($1, $2, 'booking_cancelled')`,
+      [
+        request.driver_id,
+        `A rider has cancelled their booking (${request.seats_requested} seat(s)) for your ride to ${request.destination}.`
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: 'Booking request cancelled successfully',
+      request: updatedResult.rows[0]
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { requestSeat, getMyBookings, respondToRequest, cancelBooking };
