@@ -1,4 +1,4 @@
-const pool = require('../db');
+const { pool } = require('../db');
 
 /**
  * POST /api/bookings
@@ -99,7 +99,7 @@ const requestSeat = async (req, res, next) => {
       request: requestResult.rows[0]
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
@@ -227,7 +227,7 @@ const respondToRequest = async (req, res, next) => {
     await client.query('COMMIT');
     res.json({ message: `Request ${newStatus}`, requestId: id });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
@@ -307,7 +307,7 @@ const cancelBooking = async (req, res, next) => {
       request: updatedResult.rows[0]
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
