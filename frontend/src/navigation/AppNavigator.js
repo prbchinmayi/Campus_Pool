@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View } from 'react-native';
 
@@ -13,6 +13,7 @@ import RegisterScreen from '../screens/auth/RegisterScreen';
 // Driver screens
 import PostRideScreen       from '../screens/driver/PostRideScreen';
 import ManageRequestsScreen from '../screens/driver/ManageRequestsScreen';
+import MyPostedRidesScreen  from '../screens/driver/MyPostedRidesScreen';
 
 // Rider screens
 import SearchRidesScreen  from '../screens/rider/SearchRidesScreen';
@@ -22,13 +23,14 @@ import RequestSeatScreen  from '../screens/rider/RequestSeatScreen';
 import RideHistoryScreen    from '../screens/shared/RideHistoryScreen';
 import RatingScreen         from '../screens/shared/RatingScreen';
 import NotificationsScreen  from '../screens/shared/NotificationsScreen';
+import SettingsScreen  from '../screens/shared/SettingsScreen';
 
 // Admin screens
 import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
 import ManageUsersScreen    from '../screens/admin/ManageUsersScreen';
 import HandleReportsScreen  from '../screens/admin/HandleReportsScreen';
 
-const Stack  = createStackNavigator();
+const Stack  = createNativeStackNavigator();
 const Tab    = createBottomTabNavigator();
 
 const HEADER_STYLE = {
@@ -52,6 +54,7 @@ const DriverStack = () => (
     <Stack.Screen name="ManageRequests" component={ManageRequestsScreen} options={{ title: 'Seat Requests' }} />
     <Stack.Screen name="RideHistory"    component={RideHistoryScreen}    options={{ title: 'My Rides' }} />
     <Stack.Screen name="Notifications"  component={NotificationsScreen}  options={{ title: 'Notifications' }} />
+    <Stack.Screen name="MyPostedRides" component={MyPostedRidesScreen} options={{ title: 'My Rides' }} />
     <Stack.Screen name="Rating"         component={RatingScreen}         options={{ title: 'Rate Rider' }} />
   </Stack.Navigator>
 );
@@ -61,7 +64,9 @@ const DriverTabs = () => (
     <Tab.Screen name="PostRideTab"    component={DriverStack}    options={{ title: 'Post Ride' }} />
     <Tab.Screen name="RequestsTab"    component={ManageRequestsScreen} options={{ title: 'Requests' }} />
     <Tab.Screen name="HistoryTab"     component={RideHistoryScreen}    options={{ title: 'History' }} />
+    <Tab.Screen name="MyRidesTab" component={MyPostedRidesScreen} options={{ title: 'My Rides' }} />
     <Tab.Screen name="NotifTab"       component={NotificationsScreen}  options={{ title: 'Notifications' }} />
+    <Tab.Screen name="SettingsTab"    component={SettingsScreen} options={{ title: 'Settings' }} />
   </Tab.Navigator>
 );
 

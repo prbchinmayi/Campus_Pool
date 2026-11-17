@@ -3,7 +3,7 @@
  * Must be registered LAST (after all routes).
  */
 const errorHandler = (err, req, res, next) => {
-  console.error(`[ERROR] ${req.method} ${req.url}:`, err.message);
+  console.error(`[ERROR] ${req.method} ${req.url}:`, err);
 
   // PostgreSQL unique-violation
   if (err.code === '23505') {

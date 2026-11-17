@@ -8,7 +8,7 @@ const pool = require('../db');
  */
 const register = async (req, res, next) => {
   try {
-    const { name, college_id, email, phone, password, role } = req.body;
+    const { name, college_id, email, phone, password, role, vehicle_id } = req.body;
 
     if (!name || !college_id || !email || !phone || !password) {
       return res.status(400).json({ error: 'All fields are required' });
@@ -17,13 +17,24 @@ const register = async (req, res, next) => {
       return res.status(400).json({ error: 'Role must be driver or rider' });
     }
 
+    // Driver must provide a vehicle_id and it must exist
+    if (role === 'driver') {
+      if (!vehicle_id) {
+        return res.status(400).json({ error: 'Vehicle ID is required for driver registration' });
+      }
+      const vCheck = await pool.query('SELECT vehicle_id FROM vehicles WHERE vehicle_id = $1', [vehicle_id]);
+      if (vCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Provided Vehicle ID does not exist' });
+      }
+    }
+
     const password_hash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (name, college_id, email, phone, password_hash, role)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING user_id, name, college_id, email, role`,
-      [name, college_id, email, phone, password_hash, role]
+      `INSERT INTO users (name, college_id, email, phone, password_hash, role, vehicle_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING user_id, name, college_id, email, role, vehicle_id`,
+      [name, college_id, email, phone, password_hash, role, role === 'driver' ? vehicle_id : null]
     );
 
     res.status(201).json({ message: 'Registration successful', user: result.rows[0] });

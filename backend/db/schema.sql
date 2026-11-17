@@ -22,6 +22,7 @@ CREATE TABLE users (
     password_hash     TEXT          NOT NULL,
     role              user_role     NOT NULL DEFAULT 'rider',
     account_status    account_status NOT NULL DEFAULT 'active',
+    vehicle_id        INT            REFERENCES vehicles(vehicle_id),
     registration_date TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 

@@ -19,6 +19,9 @@
     "ios": {
       "bundleIdentifier": "com.campuspool.app",
       "supportsTablet": false
-    }
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
   }
 }
