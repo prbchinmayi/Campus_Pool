@@ -6,18 +6,46 @@ const createReport = async (req, res, next) => {
     const reporterId = req.user.userId;
     const { reported_user_id, reported_ride_id, reason, description } = req.body;
 
-    if (!reason) return res.status(400).json({ error: 'reason is required' });
+    if (!reason || (typeof reason === 'string' && !reason.trim())) {
+      return res.status(400).json({ error: 'reason is required' });
+    }
     if (!reported_user_id && !reported_ride_id) {
       return res.status(400).json({ error: 'Must report a user or a ride' });
+    }
+    if (reported_user_id && Number(reporterId) === Number(reported_user_id)) {
+      return res.status(400).json({ error: 'You cannot report yourself' });
+    }
+
+    if (reported_user_id) {
+      const userCheck = await pool.query(
+        `SELECT user_id FROM users WHERE user_id = $1`,
+        [reported_user_id]
+      );
+      if (userCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Reported user not found' });
+      }
+    }
+
+    if (reported_ride_id) {
+      const rideCheck = await pool.query(
+        `SELECT ride_id FROM rides WHERE ride_id = $1`,
+        [reported_ride_id]
+      );
+      if (rideCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Reported ride not found' });
+      }
     }
 
     const result = await pool.query(
       `INSERT INTO reports_complaints (reporter_id, reported_user_id, reported_ride_id, reason, description)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [reporterId, reported_user_id || null, reported_ride_id || null, reason, description || null]
+      [reporterId, reported_user_id || null, reported_ride_id || null, typeof reason === 'string' ? reason.trim() : reason, description || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'Invalid reference to user or ride' });
+    }
     next(err);
   }
 };

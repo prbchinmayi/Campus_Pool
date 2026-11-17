@@ -6,7 +6,8 @@
 CREATE TYPE user_role       AS ENUM ('admin', 'driver', 'rider');
 CREATE TYPE account_status  AS ENUM ('active', 'suspended');
 CREATE TYPE ride_status     AS ENUM ('scheduled', 'ongoing', 'completed', 'cancelled');
-CREATE TYPE request_status  AS ENUM ('pending', 'accepted', 'rejected');
+-- For existing databases run: ALTER TYPE request_status ADD VALUE 'cancelled';
+CREATE TYPE request_status  AS ENUM ('pending', 'accepted', 'rejected', 'cancelled');
 CREATE TYPE resolution_status AS ENUM ('open', 'resolved');
 
 -- ============================================================

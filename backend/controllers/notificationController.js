@@ -14,6 +14,21 @@ const getMyNotifications = async (req, res, next) => {
   }
 };
 
+/** PATCH /api/notifications/read-all */
+const markAllRead = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const result = await pool.query(
+      `UPDATE notifications SET read_status = TRUE
+       WHERE user_id = $1 RETURNING *`,
+      [userId]
+    );
+    res.json({ message: 'All notifications marked as read', count: result.rowCount });
+  } catch (err) {
+    next(err);
+  }
+};
+
 /** PATCH /api/notifications/:id/read */
 const markRead = async (req, res, next) => {
   try {
@@ -33,4 +48,4 @@ const markRead = async (req, res, next) => {
   }
 };
 
-module.exports = { getMyNotifications, markRead };
+module.exports = { getMyNotifications, markRead, markAllRead };
